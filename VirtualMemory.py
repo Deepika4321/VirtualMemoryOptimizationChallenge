@@ -1,90 +1,126 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 
-# Page title
-st.title("🧠 Virtual Memory Educational Simulator")
-st.markdown("Simulate Page Replacement Algorithms: FIFO, LRU, Optimal")
+st.set_page_config(page_title="Virtual Memory Manager", layout="centered")
 
-# Input controls
-algo = st.selectbox("Choose Page Replacement Algorithm", ["FIFO", "LRU", "Optimal"])
-ram_size = st.slider("RAM Size (number of frames)", 1, 10, 3)
-input_method = st.radio("How do you want to input memory sequence?", ["Type manually", "Upload .txt file"])
+class MemoryManager:
+    def __init__(self, frames):
+        self.frames = frames
+        self.reset()
 
-# Get memory reference string
-if input_method == "Type manually":
-    input_text = st.text_input("Enter memory reference string (e.g., 7 0 1 2 0 3 0 4)")
-    references = list(map(int, input_text.strip().split())) if input_text else []
-else:
-    uploaded_file = st.file_uploader("Upload Memory Reference File", type="txt")
-    if uploaded_file:
-        content = uploaded_file.read().decode("utf-8")
-        references = list(map(int, content.strip().split()))
-    else:
-        references = []
+    def reset(self):
+        self.memory = []
+        self.page_faults = 0
+        self.history = []
 
-# Replacement algorithms
-def simulate_fifo(pages, frames):
-    memory, faults = [], 0
-    timeline = []
-    for page in pages:
-        if page not in memory:
-            faults += 1
-            if len(memory) >= frames:
-                memory.pop(0)
-            memory.append(page)
-        timeline.append(memory.copy())
-    return faults, timeline
+    def simulate_lru(self, pages):
+        self.reset()
+        recent = []
+        for i, page in enumerate(pages):
+            if page in self.memory:
+                recent.remove(page)
+                recent.append(page)
+                self.history.append((i + 1, page, list(self.memory), "Hit", self.page_faults))
+            else:
+                self.page_faults += 1
+                if len(self.memory) < self.frames:
+                    self.memory.append(page)
+                else:
+                    lru = recent.pop(0)
+                    self.memory.remove(lru)
+                    self.memory.append(page)
+                recent.append(page)
+                self.history.append((i + 1, page, list(self.memory), "Miss", self.page_faults))
+        return self.page_faults, self.history
 
-def simulate_lru(pages, frames):
-    memory, faults, recent = [], 0, {}
-    timeline = []
-    for i, page in enumerate(pages):
-        if page not in memory:
-            faults += 1
-            if len(memory) >= frames:
-                lru_page = min(recent, key=recent.get)
-                memory.remove(lru_page)
-                del recent[lru_page]
-            memory.append(page)
-        recent[page] = i
-        timeline.append(memory.copy())
-    return faults, timeline
-
-def simulate_optimal(pages, frames):
-    memory, faults = [], 0
-    timeline = []
-    for i, page in enumerate(pages):
-        if page not in memory:
-            faults += 1
-            if len(memory) >= frames:
+    def simulate_optimal(self, pages):
+        self.reset()
+        for i in range(len(pages)):
+            page = pages[i]
+            if page in self.memory:
+                self.history.append((i + 1, page, list(self.memory), "Hit", self.page_faults))
+                continue
+            self.page_faults += 1
+            if len(self.memory) < self.frames:
+                self.memory.append(page)
+            else:
                 future = pages[i+1:]
-                indices = {p: future.index(p) if p in future else float('inf') for p in memory}
-                page_to_remove = max(indices, key=indices.get)
-                memory.remove(page_to_remove)
-            memory.append(page)
-        timeline.append(memory.copy())
-    return faults, timeline
+                idx = []
+                for mem_page in self.memory:
+                    if mem_page in future:
+                        idx.append(future.index(mem_page))
+                    else:
+                        idx.append(float('inf'))
+                self.memory[idx.index(max(idx))] = page
+            self.history.append((i + 1, page, list(self.memory), "Miss", self.page_faults))
+        return self.page_faults, self.history
 
-# Run Simulation
-if st.button("Run Simulation") and references:
-    if algo == "FIFO":
-        faults, timeline = simulate_fifo(references, ram_size)
-    elif algo == "LRU":
-        faults, timeline = simulate_lru(references, ram_size)
-    else:
-        faults, timeline = simulate_optimal(references, ram_size)
+    def simulate_fifo(self, pages):
+        self.reset()
+        queue = []
+        for i, page in enumerate(pages):
+            if page in self.memory:
+                self.history.append((i + 1, page, list(self.memory), "Hit", self.page_faults))
+            else:
+                self.page_faults += 1
+                if len(self.memory) < self.frames:
+                    self.memory.append(page)
+                    queue.append(page)
+                else:
+                    out = queue.pop(0)
+                    self.memory.remove(out)
+                    self.memory.append(page)
+                    queue.append(page)
+                self.history.append((i + 1, page, list(self.memory), "Miss", self.page_faults))
+        return self.page_faults, self.history
 
-    # Results
-    st.success(f"Total Page Faults: {faults}")
-    
-    # Visualization
-    st.subheader("Page Table Evolution")
-    for i, frame in enumerate(zip(*timeline)):
-        st.text(f"Time {i+1}: {frame}")
 
-    fig, ax = plt.subplots()
-    ax.plot(range(len(references)), [len(set(t)) for t in timeline], marker='o')
-    ax.set_title("Page Set Size Over Time")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Pages in Memory")
-    st.pyplot(fig)
+# Streamlit UI
+st.title("📊 Virtual Memory Management Tool")
+st.markdown("Simulate **Paging**, **Page Faults**, and Replacement Algorithms: **LRU**, **FIFO**, **Optimal**")
+
+frames = st.number_input("🔢 Number of Memory Frames:", min_value=1, max_value=20, value=3)
+page_input = st.text_input("📥 Page Reference String (space-separated):", "7 0 1 2 0 3 0 4 2 3 0 3 2")
+algo = st.selectbox("🧠 Choose Replacement Algorithm:", ["LRU", "FIFO", "Optimal"])
+simulate_btn = st.button("🚀 Run Simulation")
+
+if simulate_btn:
+    try:
+        pages = list(map(int, page_input.strip().split()))
+        manager = MemoryManager(frames)
+
+        if algo == "LRU":
+            faults, history = manager.simulate_lru(pages)
+        elif algo == "FIFO":
+            faults, history = manager.simulate_fifo(pages)
+        else:
+            faults, history = manager.simulate_optimal(pages)
+
+        st.success(f"✅ Total Page Faults using {algo}: **{faults}**")
+        st.write("---")
+        st.subheader("📋 Simulation Steps")
+
+        # Show table
+        table_data = {
+            "Step": [step for step, _, _, _, _ in history],
+            "Page": [page for _, page, _, _, _ in history],
+            "Memory State": [mem for _, _, mem, _, _ in history],
+            "Status": [status for _, _, _, status, _ in history],
+            "Cumulative Faults": [fault for _, _, _, _, fault in history],
+        }
+        st.dataframe(table_data, use_container_width=True)
+
+        # Plot graph
+        st.subheader("📈 Page Fault Trend")
+        plt.figure(figsize=(10, 4))
+        steps = [step for step, _, _, _, _ in history]
+        faults_over_time = [fault for _, _, _, _, fault in history]
+        plt.plot(steps, faults_over_time, marker='o', color='royalblue', linewidth=2)
+        plt.xlabel("Step")
+        plt.ylabel("Cumulative Page Faults")
+        plt.title(f"Page Faults Over Time ({algo})")
+        plt.grid(True)
+        st.pyplot(plt)
+
+    except Exception as e:
+        st.error(f"❌ Error: {e}")
